@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Wedding Invite Personalizer</title>
+
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600&family=Lato:wght@300;400&family=Great+Vibes&family=Playfair+Display:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet" />
+
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --gold:#c9a96e;
+  --gold-light:#e8d5a3;
+  --dark:#1a1410;
+  --cream:#faf7f2;
+  --muted:#7a6652;
+  --border:rgba(201,169,110,.3);
+}
+
+body {
+  font-family:'Lato',sans-serif;
+  background:var(--dark);
+  color:var(--cream);
+  min-height:100vh;
+}
+
+.container {
+  max-width:980px;
+  margin:auto;
+  padding:30px 22px 80px;
+}
+
+header {
+  text-align:center;
+  padding:30px 0 40px;
+}
+
+header h1 {
+  font-family:'Cinzel',serif;
+  color:var(--gold-light);
+  letter-spacing:.08em;
+  font-weight:400;
+}
+
+header p { color:var(--muted); margin-top:10px; }
+
+.step {
+  border:1px solid var(--border);
+  padding:30px;
+  border-radius:8px;
+  margin-bottom:26px;
+  background:rgba(255,255,255,.025);
+}
+
+.step h2 {
+  color:var(--gold-light);
+  margin-bottom:18px;
+  font-weight:400;
+}
+
+.field {
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  margin-bottom:16px;
+}
+
+label {
+  color:var(--gold);
+  font-family:'Cinzel',serif;
+  font-size:.7rem;
+  letter-spacing:.15em;
+  text-transform:uppercase;
+}
+
+input, select {
+  padding:11px 14px;
+  background:rgba(255,255,255,.06);
+  border:1px solid var(--border);
+  color:var(--cream);
+  border-radius:4px;
+}
+
+select option { background:var(--dark); }
+
+button, .btn {
+  padding:13px 22px;
+  border:none;
+  border-radius:4px;
+  cursor:pointer;
+  font-family:'Cinzel',serif;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  text-decoration:none;
+  text-align:center;
+}
+
+.btn-primary {
+  width:100%;
+  background:linear-gradient(135deg,#8b6914,#c9a96e);
+  color:#1a1410;
+  font-weight:600;
+}
+
+.btn-primary:disabled {
+  opacity:.45;
+  cursor:not-allowed;
+}
+
+.btn-outline {
+  background:transparent;
+  border:1px solid var(--gold);
+  color:var(--gold);
+}
+
+.btn-danger {
+  background:rgba(255,70,70,.15);
+  border:1px solid rgba(255,70,70,.4);
+  color:#ff7777;
+}
+
+.btn-download {
+  background:rgba(255,255,255,.08);
+  color:var(--cream);
+  border:1px solid var(--border);
+}
+
+.btn-whatsapp {
+  background:#25d366;
+  color:white;
+}
+
+.upload-zone {
+  border:2px dashed var(--border);
+  padding:45px 20px;
+  text-align:center;
+  position:relative;
+  cursor:pointer;
+}
+
+.upload-zone input {
+  position:absolute;
+  inset:0;
+  opacity:0;
+  cursor:pointer;
+}
+
+.preview-section {
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:14px;
+}
+
+.preview-wrapper {
+  position:relative;
+  display:inline-block;
+  max-width:100%;
+  overflow:hidden;
+  border:1px solid var(--border);
+  cursor:crosshair;
+}
+
+.preview-wrapper img {
+  display:block;
+  max-width:100%;
+  height:auto;
+}
+
+.preview-hint {
+  position:absolute;
+  inset:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background:rgba(0,0,0,.45);
+  color:var(--gold-light);
+  font-family:'Cinzel',serif;
+  pointer-events:none;
+  text-align:center;
+}
+
+.preview-wrapper.positioned .preview-hint { display:none; }
+
+.text-marker {
+  position:absolute;
+  transform:translate(-50%, -50%);
+  white-space:nowrap;
+  cursor:move;
+  user-select:none;
+  touch-action:none;
+  padding:2px 6px;
+  border:1px solid transparent;
+  text-shadow:0 1px 3px rgba(0,0,0,.85), 0 0 12px rgba(0,0,0,.6);
+}
+
+.text-marker.selected {
+  border:1px dashed var(--gold);
+  background:rgba(0,0,0,.25);
+}
+
+.controls-grid {
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:18px;
+}
+
+@media(max-width:650px) {
+  .controls-grid { grid-template-columns:1fr; }
+}
+
+.position-row {
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:10px;
+}
+
+.layers-list {
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  margin-top:16px;
+}
+
+.layer-item {
+  border:1px solid var(--border);
+  padding:10px 12px;
+  border-radius:4px;
+  display:flex;
+  justify-content:space-between;
+  cursor:pointer;
+  background:rgba(255,255,255,.03);
+}
+
+.layer-item.selected {
+  border-color:var(--gold);
+  color:var(--gold-light);
+}
+
+.output-video {
+  width:100%;
+  max-height:420px;
+  background:#000;
+  border:1px solid var(--border);
+  border-radius:6px;
+}
+
+.share-row {
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:14px;
+  margin-top:16px;
+}
+
+.hidden { display:none; }
+
+.toast {
+  position:fixed;
+  bottom:28px;
+  left:50%;
+  transform:translateX(-50%);
+  background:#3d3026;
+  border:1px solid var(--gold);
+  color:white;
+  padding:12px 24px;
+  border-radius:4px;
+  opacity:0;
+  transition:.3s;
+  z-index:999;
+}
+
+.toast.show { opacity:1; }
+
+.progress-overlay {
+  display:none;
+  position:fixed;
+  inset:0;
+  background:rgba(0,0,0,.75);
+  z-index:99;
+  align-items:center;
+  justify-content:center;
+}
+
+.progress-overlay.show { display:flex; }
+
+.progress-box {
+  background:var(--dark);
+  border:1px solid var(--border);
+  padding:38px;
+  border-radius:10px;
+  text-align:center;
+}
+</style>
+</head>
+
+<body>
+<div class="container">
+
+<header>
+  <h1>Wedding Invite Video Studio</h1>
+  <p>Click anywhere, add text, drag it, edit it, and generate your video.</p>
+</header>
+
+<div class="step">
+  <h2>Backend Server</h2>
+  <div class="field">
+    <label>API Base URL</label>
+    <input id="apiUrl" value="http://localhost:3001" />
+  </div>
+  <button class="btn-outline" onclick="testApi()">Test Server</button>
+  <div id="apiStatus" style="margin-top:12px;color:var(--muted);"></div>
+</div>
+
+<div class="step">
+  <h2>Upload Video</h2>
+  <div class="upload-zone">
+    <input type="file" accept="video/*" onchange="handleFileSelect(this)" />
+    <p><strong style="color:var(--gold)">Click to upload</strong> your wedding invite video</p>
+  </div>
+  <div id="uploadStatus" style="margin-top:12px;color:var(--muted);"></div>
+</div>
+
+<div class="step hidden" id="step-preview">
+  <h2>Click to Add Text</h2>
+  <div class="preview-section">
+    <div class="preview-wrapper" id="previewWrapper" onclick="handlePreviewClick(event)">
+      <img id="previewImg" />
+      <div class="preview-hint">Click anywhere to add text</div>
+    </div>
+    <div id="posInfo" style="color:var(--muted);font-size:.85rem;">No text added yet</div>
+  </div>
+</div>
+
+<div class="step hidden" id="step-customize">
+  <h2>Edit Selected Text</h2>
+
+  <div class="field">
+    <label>Text</label>
+    <input id="textInput" oninput="updateSelectedFromControls()" placeholder="Select or add text" />
+  </div>
+
+  <div class="controls-grid">
+    <div class="field">
+      <label>Font Size: <span id="fontSizeVal">48</span>px</label>
+      <input type="range" id="fontSize" min="16" max="160" value="48" oninput="updateSelectedFromControls()" />
+    </div>
+
+    <div class="field">
+      <label>Font Family</label>
+      <select id="fontKey" onchange="updateSelectedFromControls()">
+        <option value="greatvibes">Great Vibes</option>
+        <option value="cinzel">Cinzel</option>
+        <option value="playfair" selected>Playfair Display</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label>Font Style</label>
+      <select id="fontStyle" onchange="updateSelectedFromControls()">
+        <option value="normal">Normal</option>
+        <option value="bold">Bold</option>
+        <option value="italic">Italic</option>
+        <option value="bolditalic">Bold Italic</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label>Color</label>
+      <input type="color" id="fontColor" value="#ffffff" oninput="updateSelectedFromControls()" />
+    </div>
+
+    <div class="field">
+      <label>Position %</label>
+      <div class="position-row">
+        <input type="number" id="posX" min="0" max="100" step="0.1" oninput="updateSelectedFromControls()" placeholder="X%" />
+        <input type="number" id="posY" min="0" max="100" step="0.1" oninput="updateSelectedFromControls()" placeholder="Y%" />
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Delete</label>
+      <button class="btn-danger" onclick="deleteSelectedText()">Delete Selected</button>
+    </div>
+  </div>
+
+  <div id="layersList" class="layers-list"></div>
+
+  <div style="margin-top:24px;">
+    <button class="btn-primary" id="generateBtn" onclick="generateVideo()" disabled>
+      Generate Video
+    </button>
+  </div>
+</div>
+
+<div class="step hidden" id="step-output">
+  <h2>Final Video</h2>
+  <video id="outputVideo" class="output-video" controls playsinline></video>
+
+  <div class="share-row">
+    <a id="downloadBtn" class="btn btn-download" download>Download Video</a>
+    <button class="btn btn-whatsapp" onclick="shareWhatsApp()">Share WhatsApp</button>
+  </div>
+</div>
+
+</div>
+
+<div class="progress-overlay" id="progressOverlay">
+  <div class="progress-box">
+    <h3>Rendering...</h3>
+    <p style="color:var(--muted);margin-top:8px;">Please wait while FFmpeg creates your video.</p>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const state = {
+  apiUrl: 'http://localhost:3001',
+  videoId: null,
+  videoNaturalW: 0,
+  videoNaturalH: 0,
+  texts: [],
+  selectedIndex: null,
+  outputUrl: null,
+  outputFilename: null,
+};
+
+const FONT_PREVIEW_MAP = {
+  greatvibes: "'Great Vibes', cursive",
+  cinzel: "'Cinzel', serif",
+  playfair: "'Playfair Display', serif",
+};
+
+async function testApi() {
+  state.apiUrl = document.getElementById('apiUrl').value.replace(/\/$/, '');
+  const el = document.getElementById('apiStatus');
+
+  try {
+    const r = await fetch(state.apiUrl + '/api/health');
+    if (!r.ok) throw new Error('Server not reachable');
+    el.innerHTML = '<span style="color:#25d366;">Connected ✓</span>';
+  } catch (e) {
+    el.innerHTML = '<span style="color:#ff7777;">Cannot connect. Run node server.js</span>';
+  }
+}
+
+function handleFileSelect(input) {
+  if (input.files[0]) uploadFile(input.files[0]);
+}
+
+async function uploadFile(file) {
+  state.apiUrl = document.getElementById('apiUrl').value.replace(/\/$/, '');
+
+  const status = document.getElementById('uploadStatus');
+  status.textContent = 'Uploading...';
+
+  const form = new FormData();
+  form.append('video', file);
+
+  try {
+    const r = await fetch(state.apiUrl + '/api/upload', {
+      method: 'POST',
+      body: form,
+    });
+
+    if (!r.ok) throw new Error(await r.text());
+
+    const data = await r.json();
+
+    state.videoId = data.videoId;
+    state.videoNaturalW = data.width;
+    state.videoNaturalH = data.height;
+    state.texts = [];
+    state.selectedIndex = null;
+
+    status.innerHTML = `<span style="color:var(--gold)">Uploaded ✓</span> ${data.width}×${data.height}`;
+
+    const img = document.getElementById('previewImg');
+    img.src = state.apiUrl + data.thumbnailPath;
+
+    img.onload = () => {
+      show('step-preview');
+      show('step-customize');
+      renderAllMarkers();
+      updateGenerateButton();
+    };
+  } catch (e) {
+    status.innerHTML = `<span style="color:#ff7777;">Upload failed: ${e.message}</span>`;
+  }
+}
+
+function handlePreviewClick(e) {
+  if (!state.videoId) return;
+
+  const img = document.getElementById('previewImg');
+  const rect = img.getBoundingClientRect();
+
+  const x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+  const y = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+
+  const text = prompt('Enter text:');
+  if (!text || !text.trim()) return;
+
+  state.texts.push({
+    text: text.trim(),
+    x,
+    y,
+    fontSize: Number(document.getElementById('fontSize').value) || 48,
+    color: document.getElementById('fontColor').value,
+    fontKey: document.getElementById('fontKey').value,
+    fontStyle: document.getElementById('fontStyle').value,
+  });
+
+  state.selectedIndex = state.texts.length - 1;
+
+  document.getElementById('previewWrapper').classList.add('positioned');
+
+  syncControlsFromSelected();
+  renderAllMarkers();
+  updateGenerateButton();
+}
+
+function renderAllMarkers() {
+  document.querySelectorAll('.text-marker').forEach(el => el.remove());
+
+  const img = document.getElementById('previewImg');
+  const wrapper = document.getElementById('previewWrapper');
+
+  state.texts.forEach((item, index) => {
+    const marker = document.createElement('div');
+
+    marker.className = 'text-marker';
+    if (index === state.selectedIndex) marker.classList.add('selected');
+
+    const scaleRatio = img.offsetWidth / state.videoNaturalW;
+    const previewFontSize = Math.max(8, Math.round(item.fontSize * scaleRatio));
+
+    marker.style.left = item.x * img.offsetWidth + 'px';
+    marker.style.top = item.y * img.offsetHeight + 'px';
+    marker.style.fontSize = previewFontSize + 'px';
+    marker.style.color = item.color;
+    marker.style.fontFamily = FONT_PREVIEW_MAP[item.fontKey] || 'serif';
+    marker.style.fontWeight = item.fontStyle.includes('bold') ? 'bold' : 'normal';
+    marker.style.fontStyle = item.fontStyle.includes('italic') ? 'italic' : 'normal';
+    marker.textContent = item.text;
+
+    marker.onpointerdown = ev => {
+      ev.stopPropagation();
+      startDrag(ev, index);
+    };
+
+    wrapper.appendChild(marker);
+  });
+
+  renderLayersList();
+  updatePositionInfo();
+}
+
+function startDrag(ev, index) {
+  ev.preventDefault();
+
+  state.selectedIndex = index;
+  syncControlsFromSelected();
+  renderAllMarkers();
+
+  const img = document.getElementById('previewImg');
+
+  function move(e) {
+    const rect = img.getBoundingClientRect();
+
+    const x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const y = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+
+    state.texts[index].x = x;
+    state.texts[index].y = y;
+
+    syncControlsFromSelected();
+    renderAllMarkers();
+  }
+
+  function stop() {
+    window.removeEventListener('pointermove', move);
+    window.removeEventListener('pointerup', stop);
+  }
+
+  window.addEventListener('pointermove', move);
+  window.addEventListener('pointerup', stop);
+}
+
+function selectLayer(index) {
+  state.selectedIndex = index;
+  syncControlsFromSelected();
+  renderAllMarkers();
+}
+
+function syncControlsFromSelected() {
+  const item = state.texts[state.selectedIndex];
+  if (!item) return;
+
+  document.getElementById('textInput').value = item.text;
+  document.getElementById('fontSize').value = item.fontSize;
+  document.getElementById('fontSizeVal').textContent = item.fontSize;
+  document.getElementById('fontColor').value = item.color;
+  document.getElementById('fontKey').value = item.fontKey;
+  document.getElementById('fontStyle').value = item.fontStyle;
+  document.getElementById('posX').value = (item.x * 100).toFixed(1);
+  document.getElementById('posY').value = (item.y * 100).toFixed(1);
+}
+
+function updateSelectedFromControls() {
+  const item = state.texts[state.selectedIndex];
+  if (!item) return;
+
+  const x = parseFloat(document.getElementById('posX').value);
+  const y = parseFloat(document.getElementById('posY').value);
+
+  item.text = document.getElementById('textInput').value || 'Text';
+  item.fontSize = Number(document.getElementById('fontSize').value) || 48;
+  item.color = document.getElementById('fontColor').value;
+  item.fontKey = document.getElementById('fontKey').value;
+  item.fontStyle = document.getElementById('fontStyle').value;
+
+  if (!isNaN(x)) item.x = Math.max(0, Math.min(100, x)) / 100;
+  if (!isNaN(y)) item.y = Math.max(0, Math.min(100, y)) / 100;
+
+  document.getElementById('fontSizeVal').textContent = item.fontSize;
+
+  renderAllMarkers();
+  updateGenerateButton();
+}
+
+function deleteSelectedText() {
+  if (state.selectedIndex === null) return;
+
+  state.texts.splice(state.selectedIndex, 1);
+  state.selectedIndex = state.texts.length ? 0 : null;
+
+  if (state.selectedIndex !== null) syncControlsFromSelected();
+  else clearControls();
+
+  renderAllMarkers();
+  updateGenerateButton();
+}
+
+function clearControls() {
+  document.getElementById('textInput').value = '';
+  document.getElementById('posX').value = '';
+  document.getElementById('posY').value = '';
+}
+
+function renderLayersList() {
+  const list = document.getElementById('layersList');
+  list.innerHTML = '';
+
+  state.texts.forEach((item, index) => {
+    const div = document.createElement('div');
+    div.className = 'layer-item';
+
+    if (index === state.selectedIndex) div.classList.add('selected');
+
+    div.innerHTML = `
+      <span>${index + 1}. ${escapeHtml(item.text)}</span>
+      <span>${(item.x * 100).toFixed(1)}%, ${(item.y * 100).toFixed(1)}%</span>
+    `;
+
+    div.onclick = () => selectLayer(index);
+
+    list.appendChild(div);
+  });
+}
+
+function updatePositionInfo() {
+  const info = document.getElementById('posInfo');
+
+  if (!state.texts.length) {
+    info.textContent = 'No text added yet';
+    return;
+  }
+
+  const item = state.texts[state.selectedIndex];
+  const absX = Math.round(item.x * state.videoNaturalW);
+  const absY = Math.round(item.y * state.videoNaturalH);
+
+  info.innerHTML = `Selected: <span style="color:var(--gold)">${escapeHtml(item.text)}</span> · Pixel ${absX}, ${absY}`;
+}
+
+function updateGenerateButton() {
+  document.getElementById('generateBtn').disabled = !(state.videoId && state.texts.length);
+}
+
+async function generateVideo() {
+  if (!state.texts.length) {
+    toast('Add text first');
+    return;
+  }
+
+  document.getElementById('progressOverlay').classList.add('show');
+
+  try {
+    const r = await fetch(state.apiUrl + '/api/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        videoId: state.videoId,
+        texts: state.texts,
+        duration: 5,
+      }),
+    });
+
+    if (!r.ok) {
+      const err = await r.json();
+      throw new Error(err.error || 'Server error');
+    }
+
+    const data = await r.json();
+
+    state.outputUrl = state.apiUrl + data.downloadUrl;
+    state.outputFilename = data.filename;
+
+    document.getElementById('outputVideo').src = state.outputUrl;
+
+    const dl = document.getElementById('downloadBtn');
+    dl.href = state.outputUrl;
+    dl.download = state.outputFilename;
+
+    show('step-output');
+    document.getElementById('step-output').scrollIntoView({ behavior: 'smooth' });
+  } catch (e) {
+    toast(e.message);
+  } finally {
+    document.getElementById('progressOverlay').classList.remove('show');
+  }
+}
+
+async function shareWhatsApp() {
+  const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+  if (isMobile && navigator.share) {
+    const blob = await fetch(state.outputUrl).then(r => r.blob());
+    const file = new File([blob], state.outputFilename, { type: 'video/mp4' });
+
+    if (navigator.canShare && navigator.canShare({ files:[file] })) {
+      await navigator.share({ files:[file], title:'Wedding Invitation' });
+    }
+  } else {
+    window.open('https://web.whatsapp.com/', '_blank');
+    toast('Download the video and attach it in WhatsApp Web');
+  }
+}
+
+window.addEventListener('resize', renderAllMarkers);
+
+function show(id) {
+  document.getElementById(id).classList.remove('hidden');
+}
+
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+function escapeHtml(str) {
+  return String(str)
+    .replaceAll('&','&amp;')
+    .replaceAll('<','&lt;')
+    .replaceAll('>','&gt;')
+    .replaceAll('"','&quot;')
+    .replaceAll("'","&#039;");
+}
+</script>
+</body>
+</html>
