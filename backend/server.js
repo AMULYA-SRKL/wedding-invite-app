@@ -22,11 +22,18 @@ const BASE_DIR = __dirname;
 const OUTPUTS_DIR = path.join(BASE_DIR, 'outputs');
 const FONTS_DIR = path.join(BASE_DIR, 'fonts');
 const TEMPLATE_DIR = path.join(BASE_DIR, 'template');
+
 const TEMPLATE_PATH = path.join(TEMPLATE_DIR, 'template.mp4');
+const INTRO_PATH = path.join(TEMPLATE_DIR, 'intro.mp4');
+const REST_PATH = path.join(TEMPLATE_DIR, 'rest.mp4');
 
 [OUTPUTS_DIR, FONTS_DIR, TEMPLATE_DIR].forEach(d =>
   fs.mkdirSync(d, { recursive: true })
 );
+
+console.log('📁 BASE_DIR:', BASE_DIR);
+console.log('📁 INTRO:', INTRO_PATH);
+console.log('📁 REST:', REST_PATH);
 
 const FONT_MAP = {
   greatvibes: {
@@ -40,6 +47,7 @@ const FONT_MAP = {
       bolditalic: { name: 'GreatVibes.ttf', url: null },
     },
   },
+
   cinzel: {
     files: {
       normal: {
@@ -51,6 +59,7 @@ const FONT_MAP = {
       bolditalic: { name: 'Cinzel.ttf', url: null },
     },
   },
+
   playfair: {
     files: {
       normal: {
@@ -70,31 +79,33 @@ const FONT_MAP = {
 function downloadFile(url, dest) {
   return new Promise((resolve, reject) => {
     const follow = u => {
-      https.get(u, res => {
-        if ([301, 302, 307, 308].includes(res.statusCode)) {
-          return follow(res.headers.location);
-        }
+      https
+        .get(u, res => {
+          if ([301, 302, 307, 308].includes(res.statusCode)) {
+            return follow(res.headers.location);
+          }
 
-        if (res.statusCode !== 200) {
-          return reject(new Error(`HTTP ${res.statusCode} for ${u}`));
-        }
+          if (res.statusCode !== 200) {
+            return reject(new Error(`HTTP ${res.statusCode} for ${u}`));
+          }
 
-        const tmp = dest + '.tmp';
-        const out = fs.createWriteStream(tmp);
+          const tmp = dest + '.tmp';
+          const out = fs.createWriteStream(tmp);
 
-        res.pipe(out);
+          res.pipe(out);
 
-        out.on('finish', () => {
-          out.close();
-          fs.renameSync(tmp, dest);
-          resolve();
-        });
+          out.on('finish', () => {
+            out.close();
+            fs.renameSync(tmp, dest);
+            resolve();
+          });
 
-        out.on('error', e => {
-          fs.rmSync(tmp, { force: true });
-          reject(e);
-        });
-      }).on('error', reject);
+          out.on('error', e => {
+            fs.rmSync(tmp, { force: true });
+            reject(e);
+          });
+        })
+        .on('error', reject);
     };
 
     follow(url);
@@ -119,6 +130,7 @@ async function ensureFonts() {
       console.log(`✅ Font OK: ${filename}`);
     } else {
       console.log(`⬇️ Downloading font: ${filename}`);
+
       try {
         await downloadFile(url, dest);
         console.log(`✅ Downloaded: ${filename}`);
@@ -202,24 +214,25 @@ app.get('/api/health', (req, res) => {
     ffmpeg: FFMPEG_PATH,
     ffprobe: FFPROBE_PATH,
     templateExists: fs.existsSync(TEMPLATE_PATH),
-    templatePath: TEMPLATE_PATH,
+    introExists: fs.existsSync(INTRO_PATH),
+    restExists: fs.existsSync(REST_PATH),
   });
 });
 
 app.get('/api/template', (req, res) => {
   try {
-    if (!fs.existsSync(TEMPLATE_PATH)) {
+    if (!fs.existsSync(INTRO_PATH)) {
       return res.status(404).json({
-        error: 'template.mp4 not found. Put your video at backend/template/template.mp4',
+        error: 'intro.mp4 not found. Put it at backend/template/intro.mp4',
       });
     }
 
-    const probe = ffprobeSync(TEMPLATE_PATH);
+    const probe = ffprobeSync(INTRO_PATH);
     const vs = probe.streams.find(s => s.codec_type === 'video');
 
     if (!vs) {
       return res.status(400).json({
-        error: 'No video stream found in template.mp4',
+        error: 'No video stream found in intro.mp4',
       });
     }
 
@@ -231,7 +244,7 @@ app.get('/api/template', (req, res) => {
 
     if (!fs.existsSync(thumbPath)) {
       execSync(
-        `"${FFMPEG_PATH}" -i "${TEMPLATE_PATH}" -vframes 1 -q:v 2 "${thumbPath}" -y`
+        `"${FFMPEG_PATH}" -i "${INTRO_PATH}" -vframes 1 -q:v 2 "${thumbPath}" -y`
       );
     }
 
@@ -249,9 +262,15 @@ app.get('/api/template', (req, res) => {
 app.post('/api/generate', async (req, res) => {
   const { texts = [], duration = 5 } = req.body;
 
-  if (!fs.existsSync(TEMPLATE_PATH)) {
+  if (!fs.existsSync(INTRO_PATH)) {
     return res.status(404).json({
-      error: 'template.mp4 not found. Put your video at backend/template/template.mp4',
+      error: 'intro.mp4 not found. Put it at backend/template/intro.mp4',
+    });
+  }
+
+  if (!fs.existsSync(REST_PATH)) {
+    return res.status(404).json({
+      error: 'rest.mp4 not found. Put it at backend/template/rest.mp4',
     });
   }
 
@@ -262,7 +281,7 @@ app.post('/api/generate', async (req, res) => {
   }
 
   try {
-    const probe = ffprobeSync(TEMPLATE_PATH);
+    const probe = ffprobeSync(INTRO_PATH);
     const vs = probe.streams.find(s => s.codec_type === 'video');
 
     const vidW = parseInt(vs.width);
@@ -320,59 +339,58 @@ app.post('/api/generate', async (req, res) => {
     const outputName = `${uuidv4()}.mp4`;
     const outputPath = path.join(OUTPUTS_DIR, outputName);
 
-    /*
-      This fixes the extra 2 seconds issue.
+    const renderedIntro = path.join(OUTPUTS_DIR, `intro_rendered_${uuidv4()}.mp4`);
+    const listFile = path.join(OUTPUTS_DIR, `concat_${uuidv4()}.txt`);
 
-      Old method:
-      - first 5 seconds rendered
-      - rest copied using -ss
-      Problem: copy mode cuts only at keyframes.
+    try {
+      console.log('[generate] Rendering only intro.mp4');
 
-      New method:
-      - split video stream
-      - trim first part exactly
-      - trim rest exactly
-      - apply text only to first part
-      - concat frame-accurately
-    */
+      await runFFmpeg([
+        '-i',
+        INTRO_PATH,
+        '-vf',
+        drawtextFilter,
+        '-c:v',
+        'libx264',
+        '-preset',
+        'veryfast',
+        '-crf',
+        '18',
+        '-c:a',
+        'aac',
+        '-b:a',
+        '192k',
+        '-movflags',
+        '+faststart',
+        '-y',
+        renderedIntro,
+      ]);
 
-    await runFFmpeg([
-      '-i',
-      TEMPLATE_PATH,
+      fs.writeFileSync(
+        listFile,
+        `file '${renderedIntro.replace(/\\/g, '/')}'\nfile '${REST_PATH.replace(/\\/g, '/')}'\n`
+      );
 
-      '-filter_complex',
-      `[0:v]split=2[v1][v2];` +
-        `[v1]trim=0:${duration},setpts=PTS-STARTPTS,${drawtextFilter}[first];` +
-        `[v2]trim=${duration},setpts=PTS-STARTPTS[rest];` +
-        `[first][rest]concat=n=2:v=1:a=0[outv]`,
+      console.log('[generate] Joining rendered intro + rest.mp4');
 
-      '-map',
-      '[outv]',
-
-      '-map',
-      '0:a?',
-
-      '-c:v',
-      'libx264',
-
-      '-preset',
-      'veryfast',
-
-      '-crf',
-      '18',
-
-      '-c:a',
-      'aac',
-
-      '-b:a',
-      '192k',
-
-      '-movflags',
-      '+faststart',
-
-      '-y',
-      outputPath,
-    ]);
+      await runFFmpeg([
+        '-f',
+        'concat',
+        '-safe',
+        '0',
+        '-i',
+        listFile,
+        '-c',
+        'copy',
+        '-movflags',
+        '+faststart',
+        '-y',
+        outputPath,
+      ]);
+    } finally {
+      fs.rmSync(renderedIntro, { force: true });
+      fs.rmSync(listFile, { force: true });
+    }
 
     const firstText = texts[0]?.text || 'guest';
     const slug = firstText
@@ -413,6 +431,7 @@ const PORT = process.env.PORT || 3001;
 ensureFonts().then(() => {
   app.listen(PORT, () => {
     console.log(`\n🎬 Wedding Invite API running on http://localhost:${PORT}`);
-    console.log(`Template must be here: ${TEMPLATE_PATH}\n`);
+    console.log(`Intro must be here: ${INTRO_PATH}`);
+    console.log(`Rest must be here : ${REST_PATH}\n`);
   });
 });
