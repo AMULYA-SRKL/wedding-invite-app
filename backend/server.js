@@ -43,6 +43,7 @@ const FONT_MAP = {
       bolditalic: { name: 'GreatVibes.ttf', url: null },
     },
   },
+
   cinzel: {
     files: {
       normal: {
@@ -54,6 +55,7 @@ const FONT_MAP = {
       bolditalic: { name: 'Cinzel.ttf', url: null },
     },
   },
+
   playfair: {
     files: {
       normal: {
@@ -73,31 +75,33 @@ const FONT_MAP = {
 function downloadFile(url, dest) {
   return new Promise((resolve, reject) => {
     const follow = u => {
-      https.get(u, res => {
-        if ([301, 302, 307, 308].includes(res.statusCode)) {
-          return follow(res.headers.location);
-        }
+      https
+        .get(u, res => {
+          if ([301, 302, 307, 308].includes(res.statusCode)) {
+            return follow(res.headers.location);
+          }
 
-        if (res.statusCode !== 200) {
-          return reject(new Error(`HTTP ${res.statusCode} for ${u}`));
-        }
+          if (res.statusCode !== 200) {
+            return reject(new Error(`HTTP ${res.statusCode} for ${u}`));
+          }
 
-        const tmp = dest + '.tmp';
-        const out = fs.createWriteStream(tmp);
+          const tmp = dest + '.tmp';
+          const out = fs.createWriteStream(tmp);
 
-        res.pipe(out);
+          res.pipe(out);
 
-        out.on('finish', () => {
-          out.close();
-          fs.renameSync(tmp, dest);
-          resolve();
-        });
+          out.on('finish', () => {
+            out.close();
+            fs.renameSync(tmp, dest);
+            resolve();
+          });
 
-        out.on('error', e => {
-          fs.rmSync(tmp, { force: true });
-          reject(e);
-        });
-      }).on('error', reject);
+          out.on('error', e => {
+            fs.rmSync(tmp, { force: true });
+            reject(e);
+          });
+        })
+        .on('error', reject);
     };
 
     follow(url);
@@ -161,9 +165,7 @@ function escapeDrawtext(str) {
 }
 
 function fontPathForFFmpeg(fontFile) {
-  return fontFile
-    .replace(/\\/g, '/')
-    .replace(/^([A-Za-z]):/, '$1\\:');
+  return fontFile.replace(/\\/g, '/').replace(/^([A-Za-z]):/, '$1\\:');
 }
 
 function ffprobeSync(filePath) {
@@ -173,6 +175,26 @@ function ffprobeSync(filePath) {
   );
 
   return JSON.parse(out.toString());
+}
+
+function runFFmpeg(args) {
+  return new Promise((resolve, reject) => {
+    const ff = spawn(FFMPEG_PATH, args);
+    let stderr = '';
+
+    ff.stderr.on('data', d => {
+      stderr += d.toString();
+    });
+
+    ff.on('close', code => {
+      if (code === 0) {
+        resolve();
+      } else {
+        console.error('[FFmpeg error]\n', stderr.slice(-5000));
+        reject(new Error(`FFmpeg exited with code ${code}`));
+      }
+    });
+  });
 }
 
 const app = express();
@@ -204,7 +226,9 @@ app.get('/api/template', (req, res) => {
     const vs = probe.streams.find(s => s.codec_type === 'video');
 
     if (!vs) {
-      return res.status(400).json({ error: 'No video stream found in template.mp4' });
+      return res.status(400).json({
+        error: 'No video stream found in template.mp4',
+      });
     }
 
     const width = parseInt(vs.width);
@@ -240,7 +264,9 @@ app.post('/api/generate', async (req, res) => {
   }
 
   if (!Array.isArray(texts) || texts.length === 0) {
-    return res.status(400).json({ error: 'Please add at least one text layer' });
+    return res.status(400).json({
+      error: 'Please add at least one text layer',
+    });
   }
 
   try {
@@ -269,7 +295,9 @@ app.post('/api/generate', async (req, res) => {
       const fontFile = resolveFontFile(fontKey, fontStyle);
 
       if (!fontFile) {
-        return res.status(500).json({ error: 'No font file found' });
+        return res.status(500).json({
+          error: 'No font file found',
+        });
       }
 
       const safeFont = fontPathForFFmpeg(fontFile);
@@ -290,56 +318,90 @@ app.post('/api/generate', async (req, res) => {
     }
 
     if (!filters.length) {
-      return res.status(400).json({ error: 'No valid text layers found' });
+      return res.status(400).json({
+        error: 'No valid text layers found',
+      });
     }
+
+    const drawtextFilter = filters.join(',');
 
     const outputName = `${uuidv4()}.mp4`;
     const outputPath = path.join(OUTPUTS_DIR, outputName);
 
-    const drawtextFilter = filters.join(',');
+    const firstPart = path.join(OUTPUTS_DIR, `first_${uuidv4()}.mp4`);
+    const restPart = path.join(OUTPUTS_DIR, `rest_${uuidv4()}.mp4`);
+    const listFile = path.join(OUTPUTS_DIR, `list_${uuidv4()}.txt`);
 
-    const ffmpegArgs = [
-      '-i',
-      TEMPLATE_PATH,
-      '-vf',
-      drawtextFilter,
-      '-c:v',
-      'libx264',
-      '-preset',
-      'ultrafast',
-      '-crf',
-      '24',
-      '-c:a',
-      'copy',
-      '-movflags',
-      '+faststart',
-      '-y',
-      outputPath,
-    ];
-
-    console.log('[generate] Rendering from fixed template');
+    console.log('[generate] Template:', TEMPLATE_PATH);
     console.log('[generate] Text layers:', texts.length);
+    console.log('[generate] Rendering only first seconds:', duration);
 
-    await new Promise((resolve, reject) => {
-      const ff = spawn(FFMPEG_PATH, ffmpegArgs);
-      let stderr = '';
+    try {
+      await runFFmpeg([
+        '-i',
+        TEMPLATE_PATH,
+        '-t',
+        String(duration),
+        '-vf',
+        drawtextFilter,
+        '-c:v',
+        'libx264',
+        '-preset',
+        'veryfast',
+        '-crf',
+        '18',
+        '-c:a',
+        'aac',
+        '-b:a',
+        '192k',
+        '-movflags',
+        '+faststart',
+        '-y',
+        firstPart,
+      ]);
 
-      ff.stderr.on('data', d => {
-        stderr += d.toString();
-      });
+      await runFFmpeg([
+        '-ss',
+        String(duration),
+        '-i',
+        TEMPLATE_PATH,
+        '-c',
+        'copy',
+        '-avoid_negative_ts',
+        'make_zero',
+        '-y',
+        restPart,
+      ]);
 
-      ff.on('close', code => {
-        if (code === 0) {
-          resolve();
-        } else {
-          console.error(stderr.slice(-3000));
-          reject(new Error(`FFmpeg exited with code ${code}`));
-        }
-      });
-    });
+      fs.writeFileSync(
+        listFile,
+        `file '${firstPart.replace(/\\/g, '/')}'\nfile '${restPart.replace(/\\/g, '/')}'\n`
+      );
+
+      await runFFmpeg([
+        '-f',
+        'concat',
+        '-safe',
+        '0',
+        '-i',
+        listFile,
+        '-c',
+        'copy',
+        '-movflags',
+        '+faststart',
+        '-y',
+        outputPath,
+      ]);
+    } finally {
+      fs.rmSync(firstPart, { force: true });
+      fs.rmSync(restPart, { force: true });
+      fs.rmSync(listFile, { force: true });
+    }
 
     const firstText = texts[0]?.text || 'guest';
-    const slug = firstText.replace(/\s+/g, '_').replace(/[^\w\u0900-\u097F]/g, '');
+    const slug = firstText
+      .replace(/\s+/g, '_')
+      .replace(/[^\w\u0900-\u097F]/g, '');
 
     res.json({
       outputPath: `/outputs/${outputName}`,
@@ -348,7 +410,9 @@ app.post('/api/generate', async (req, res) => {
     });
   } catch (err) {
     console.error('[generate]', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({
+      error: err.message,
+    });
   }
 });
 
