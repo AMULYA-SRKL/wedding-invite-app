@@ -299,7 +299,7 @@ app.post('/api/generate', async (req, res) => {
       const absY = Math.round(Number(item.y) * vidH);
 
       const fontSize = Math.round(Number(item.fontSize || 48));
-      const fontColor = '#3d1611';
+      const fontColor = item.color || '#ffffff';
       const fontKey = item.fontKey || 'playfair';
       const fontStyle = item.fontStyle || 'normal';
 
@@ -428,23 +428,7 @@ setInterval(() => {
 
 const PORT = process.env.PORT || 3001;
 
-
 ensureFonts().then(() => {
-  const { execSync } = require('child_process');
-
-try {
-  execSync(
-    `"${FFMPEG_PATH}" -i "${TEMPLATE_PATH}" -t 5 -c copy "${path.join(TEMPLATE_DIR, 'intro.mp4')}" -y`
-  );
-
-  execSync(
-    `"${FFMPEG_PATH}" -i "${TEMPLATE_PATH}" -ss 5 -c copy "${path.join(TEMPLATE_DIR, 'rest.mp4')}" -y`
-  );
-
-  console.log('✅ intro.mp4 and rest.mp4 created');
-} catch (e) {
-  console.error(e);
-}
   app.listen(PORT, () => {
     console.log(`\n🎬 Wedding Invite API running on http://localhost:${PORT}`);
     console.log(`Intro must be here: ${INTRO_PATH}`);
