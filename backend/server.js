@@ -299,7 +299,7 @@ app.post('/api/generate', async (req, res) => {
       const absY = Math.round(Number(item.y) * vidH);
 
       const fontSize = Math.round(Number(item.fontSize || 48));
-      const fontColor = item.color || '#ffffff';
+      const fontColor = '#3d1611';
       const fontKey = item.fontKey || 'playfair';
       const fontStyle = item.fontStyle || 'normal';
 
