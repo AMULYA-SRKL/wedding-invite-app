@@ -28,9 +28,6 @@ const TEMPLATE_PATH = path.join(TEMPLATE_DIR, 'template.mp4');
   fs.mkdirSync(d, { recursive: true })
 );
 
-console.log('📁 BASE_DIR:', BASE_DIR);
-console.log('📁 TEMPLATE:', TEMPLATE_PATH);
-
 const FONT_MAP = {
   greatvibes: {
     files: {
@@ -43,7 +40,6 @@ const FONT_MAP = {
       bolditalic: { name: 'GreatVibes.ttf', url: null },
     },
   },
-
   cinzel: {
     files: {
       normal: {
@@ -55,7 +51,6 @@ const FONT_MAP = {
       bolditalic: { name: 'Cinzel.ttf', url: null },
     },
   },
-
   playfair: {
     files: {
       normal: {
@@ -75,33 +70,31 @@ const FONT_MAP = {
 function downloadFile(url, dest) {
   return new Promise((resolve, reject) => {
     const follow = u => {
-      https
-        .get(u, res => {
-          if ([301, 302, 307, 308].includes(res.statusCode)) {
-            return follow(res.headers.location);
-          }
+      https.get(u, res => {
+        if ([301, 302, 307, 308].includes(res.statusCode)) {
+          return follow(res.headers.location);
+        }
 
-          if (res.statusCode !== 200) {
-            return reject(new Error(`HTTP ${res.statusCode} for ${u}`));
-          }
+        if (res.statusCode !== 200) {
+          return reject(new Error(`HTTP ${res.statusCode} for ${u}`));
+        }
 
-          const tmp = dest + '.tmp';
-          const out = fs.createWriteStream(tmp);
+        const tmp = dest + '.tmp';
+        const out = fs.createWriteStream(tmp);
 
-          res.pipe(out);
+        res.pipe(out);
 
-          out.on('finish', () => {
-            out.close();
-            fs.renameSync(tmp, dest);
-            resolve();
-          });
+        out.on('finish', () => {
+          out.close();
+          fs.renameSync(tmp, dest);
+          resolve();
+        });
 
-          out.on('error', e => {
-            fs.rmSync(tmp, { force: true });
-            reject(e);
-          });
-        })
-        .on('error', reject);
+        out.on('error', e => {
+          fs.rmSync(tmp, { force: true });
+          reject(e);
+        });
+      }).on('error', reject);
     };
 
     follow(url);
@@ -126,7 +119,6 @@ async function ensureFonts() {
       console.log(`✅ Font OK: ${filename}`);
     } else {
       console.log(`⬇️ Downloading font: ${filename}`);
-
       try {
         await downloadFile(url, dest);
         console.log(`✅ Downloaded: ${filename}`);
@@ -328,75 +320,59 @@ app.post('/api/generate', async (req, res) => {
     const outputName = `${uuidv4()}.mp4`;
     const outputPath = path.join(OUTPUTS_DIR, outputName);
 
-    const firstPart = path.join(OUTPUTS_DIR, `first_${uuidv4()}.mp4`);
-    const restPart = path.join(OUTPUTS_DIR, `rest_${uuidv4()}.mp4`);
-    const listFile = path.join(OUTPUTS_DIR, `list_${uuidv4()}.txt`);
+    /*
+      This fixes the extra 2 seconds issue.
 
-    console.log('[generate] Template:', TEMPLATE_PATH);
-    console.log('[generate] Text layers:', texts.length);
-    console.log('[generate] Rendering only first seconds:', duration);
+      Old method:
+      - first 5 seconds rendered
+      - rest copied using -ss
+      Problem: copy mode cuts only at keyframes.
 
-    try {
-      await runFFmpeg([
-        '-i',
-        TEMPLATE_PATH,
-        '-t',
-        String(duration),
-        '-vf',
-        drawtextFilter,
-        '-c:v',
-        'libx264',
-        '-preset',
-        'veryfast',
-        '-crf',
-        '18',
-        '-c:a',
-        'aac',
-        '-b:a',
-        '192k',
-        '-movflags',
-        '+faststart',
-        '-y',
-        firstPart,
-      ]);
+      New method:
+      - split video stream
+      - trim first part exactly
+      - trim rest exactly
+      - apply text only to first part
+      - concat frame-accurately
+    */
 
-      await runFFmpeg([
-        '-ss',
-        String(duration),
-        '-i',
-        TEMPLATE_PATH,
-        '-c',
-        'copy',
-        '-avoid_negative_ts',
-        'make_zero',
-        '-y',
-        restPart,
-      ]);
+    await runFFmpeg([
+      '-i',
+      TEMPLATE_PATH,
 
-      fs.writeFileSync(
-        listFile,
-        `file '${firstPart.replace(/\\/g, '/')}'\nfile '${restPart.replace(/\\/g, '/')}'\n`
-      );
+      '-filter_complex',
+      `[0:v]split=2[v1][v2];` +
+        `[v1]trim=0:${duration},setpts=PTS-STARTPTS,${drawtextFilter}[first];` +
+        `[v2]trim=${duration},setpts=PTS-STARTPTS[rest];` +
+        `[first][rest]concat=n=2:v=1:a=0[outv]`,
 
-      await runFFmpeg([
-        '-f',
-        'concat',
-        '-safe',
-        '0',
-        '-i',
-        listFile,
-        '-c',
-        'copy',
-        '-movflags',
-        '+faststart',
-        '-y',
-        outputPath,
-      ]);
-    } finally {
-      fs.rmSync(firstPart, { force: true });
-      fs.rmSync(restPart, { force: true });
-      fs.rmSync(listFile, { force: true });
-    }
+      '-map',
+      '[outv]',
+
+      '-map',
+      '0:a?',
+
+      '-c:v',
+      'libx264',
+
+      '-preset',
+      'veryfast',
+
+      '-crf',
+      '18',
+
+      '-c:a',
+      'aac',
+
+      '-b:a',
+      '192k',
+
+      '-movflags',
+      '+faststart',
+
+      '-y',
+      outputPath,
+    ]);
 
     const firstText = texts[0]?.text || 'guest';
     const slug = firstText
