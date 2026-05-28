@@ -1,5 +1,4 @@
 const express = require('express');
-const multer = require('multer');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
@@ -20,20 +19,20 @@ try {
 }
 
 const BASE_DIR = __dirname;
-const UPLOADS_DIR = path.join(BASE_DIR, 'uploads');
 const OUTPUTS_DIR = path.join(BASE_DIR, 'outputs');
 const FONTS_DIR = path.join(BASE_DIR, 'fonts');
+const TEMPLATE_DIR = path.join(BASE_DIR, 'template');
+const TEMPLATE_PATH = path.join(TEMPLATE_DIR, 'template.mp4');
 
-console.log('📁 BASE_DIR   :', BASE_DIR);
-console.log('📁 FONTS_DIR  :', FONTS_DIR);
-
-[UPLOADS_DIR, OUTPUTS_DIR, FONTS_DIR].forEach(d =>
+[OUTPUTS_DIR, FONTS_DIR, TEMPLATE_DIR].forEach(d =>
   fs.mkdirSync(d, { recursive: true })
 );
 
+console.log('📁 BASE_DIR:', BASE_DIR);
+console.log('📁 TEMPLATE:', TEMPLATE_PATH);
+
 const FONT_MAP = {
   greatvibes: {
-    label: 'Great Vibes',
     files: {
       normal: {
         name: 'GreatVibes.ttf',
@@ -44,9 +43,7 @@ const FONT_MAP = {
       bolditalic: { name: 'GreatVibes.ttf', url: null },
     },
   },
-
   cinzel: {
-    label: 'Cinzel',
     files: {
       normal: {
         name: 'Cinzel.ttf',
@@ -57,9 +54,7 @@ const FONT_MAP = {
       bolditalic: { name: 'Cinzel.ttf', url: null },
     },
   },
-
   playfair: {
-    label: 'Playfair Display',
     files: {
       normal: {
         name: 'PlayfairDisplay.ttf',
@@ -78,33 +73,31 @@ const FONT_MAP = {
 function downloadFile(url, dest) {
   return new Promise((resolve, reject) => {
     const follow = u => {
-      https
-        .get(u, res => {
-          if ([301, 302, 307, 308].includes(res.statusCode)) {
-            return follow(res.headers.location);
-          }
+      https.get(u, res => {
+        if ([301, 302, 307, 308].includes(res.statusCode)) {
+          return follow(res.headers.location);
+        }
 
-          if (res.statusCode !== 200) {
-            return reject(new Error(`HTTP ${res.statusCode} for ${u}`));
-          }
+        if (res.statusCode !== 200) {
+          return reject(new Error(`HTTP ${res.statusCode} for ${u}`));
+        }
 
-          const tmp = dest + '.tmp';
-          const out = fs.createWriteStream(tmp);
+        const tmp = dest + '.tmp';
+        const out = fs.createWriteStream(tmp);
 
-          res.pipe(out);
+        res.pipe(out);
 
-          out.on('finish', () => {
-            out.close();
-            fs.renameSync(tmp, dest);
-            resolve();
-          });
+        out.on('finish', () => {
+          out.close();
+          fs.renameSync(tmp, dest);
+          resolve();
+        });
 
-          out.on('error', e => {
-            fs.rmSync(tmp, { force: true });
-            reject(e);
-          });
-        })
-        .on('error', reject);
+        out.on('error', e => {
+          fs.rmSync(tmp, { force: true });
+          reject(e);
+        });
+      }).on('error', reject);
     };
 
     follow(url);
@@ -126,15 +119,13 @@ async function ensureFonts() {
     const dest = path.join(FONTS_DIR, filename);
 
     if (fs.existsSync(dest) && fs.statSync(dest).size > 1000) {
-      console.log(`✅ Font OK : ${filename}`);
+      console.log(`✅ Font OK: ${filename}`);
     } else {
-      console.log(`⬇️ Downloading font: ${filename} …`);
+      console.log(`⬇️ Downloading font: ${filename}`);
 
       try {
         await downloadFile(url, dest);
-        console.log(
-          `✅ Downloaded: ${filename} (${(fs.statSync(dest).size / 1024).toFixed(0)} KB)`
-        );
+        console.log(`✅ Downloaded: ${filename}`);
       } catch (e) {
         console.warn(`⚠️ Could not download ${filename}: ${e.message}`);
       }
@@ -154,7 +145,6 @@ function resolveFontFile(fontKey, styleKey) {
   const available = fs.readdirSync(FONTS_DIR).filter(f => f.endsWith('.ttf'));
 
   if (available.length > 0) {
-    console.warn(`⚠️ ${variant.name} not found, using ${available[0]}`);
     return path.join(FONTS_DIR, available[0]);
   }
 
@@ -179,7 +169,7 @@ function fontPathForFFmpeg(fontFile) {
 function ffprobeSync(filePath) {
   const out = execSync(
     `"${FFPROBE_PATH}" -v quiet -print_format json -show_streams "${filePath}"`,
-    { maxBuffer: 10 * 1024 * 1024 }
+    { maxBuffer: 20 * 1024 * 1024 }
   );
 
   return JSON.parse(out.toString());
@@ -188,90 +178,85 @@ function ffprobeSync(filePath) {
 const app = express();
 
 app.use(cors());
-app.use(express.json({ limit: '5mb' }));
+app.use(express.json({ limit: '10mb' }));
 app.use('/outputs', express.static(OUTPUTS_DIR));
-app.use('/uploads', express.static(UPLOADS_DIR));
+app.use('/template', express.static(TEMPLATE_DIR));
 
-const storage = multer.diskStorage({
-  destination: UPLOADS_DIR,
-  filename: (req, file, cb) => {
-    cb(null, `${uuidv4()}${path.extname(file.originalname)}`);
-  },
+app.get('/api/health', (req, res) => {
+  res.json({
+    ok: true,
+    ffmpeg: FFMPEG_PATH,
+    ffprobe: FFPROBE_PATH,
+    templateExists: fs.existsSync(TEMPLATE_PATH),
+    templatePath: TEMPLATE_PATH,
+  });
 });
 
-const upload = multer({
-  storage,
-  limits: { fileSize: 500 * 1024 * 1024 },
-});
-
-app.post('/api/upload', upload.single('video'), async (req, res) => {
+app.get('/api/template', (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({ error: 'No file uploaded' });
+    if (!fs.existsSync(TEMPLATE_PATH)) {
+      return res.status(404).json({
+        error: 'template.mp4 not found. Put your video at backend/template/template.mp4',
+      });
     }
 
-    const filePath = req.file.path;
-    const probe = ffprobeSync(filePath);
-    const videoStream = probe.streams.find(s => s.codec_type === 'video');
+    const probe = ffprobeSync(TEMPLATE_PATH);
+    const vs = probe.streams.find(s => s.codec_type === 'video');
 
-    if (!videoStream) {
-      return res.status(400).json({ error: 'No video stream found' });
+    if (!vs) {
+      return res.status(400).json({ error: 'No video stream found in template.mp4' });
     }
 
-    const width = parseInt(videoStream.width);
-    const height = parseInt(videoStream.height);
+    const width = parseInt(vs.width);
+    const height = parseInt(vs.height);
 
-    const thumbName = `thumb_${req.file.filename}.jpg`;
-    const thumbPath = path.join(UPLOADS_DIR, thumbName);
+    const thumbName = 'template-thumb.jpg';
+    const thumbPath = path.join(TEMPLATE_DIR, thumbName);
 
-    execSync(
-      `"${FFMPEG_PATH}" -i "${filePath}" -vframes 1 -q:v 2 "${thumbPath}" -y`
-    );
+    if (!fs.existsSync(thumbPath)) {
+      execSync(
+        `"${FFMPEG_PATH}" -i "${TEMPLATE_PATH}" -vframes 1 -q:v 2 "${thumbPath}" -y`
+      );
+    }
 
     res.json({
-      videoId: req.file.filename,
-      videoPath: `/uploads/${req.file.filename}`,
-      thumbnailPath: `/uploads/${thumbName}`,
       width,
       height,
+      thumbnailPath: `/template/${thumbName}`,
     });
   } catch (err) {
-    console.error('[upload]', err);
+    console.error('[template]', err);
     res.status(500).json({ error: err.message });
   }
 });
 
 app.post('/api/generate', async (req, res) => {
-  const { videoId, texts = [], duration = 5 } = req.body;
+  const { texts = [], duration = 5 } = req.body;
 
-  if (!videoId) {
-    return res.status(400).json({ error: 'Missing videoId' });
+  if (!fs.existsSync(TEMPLATE_PATH)) {
+    return res.status(404).json({
+      error: 'template.mp4 not found. Put your video at backend/template/template.mp4',
+    });
   }
 
   if (!Array.isArray(texts) || texts.length === 0) {
     return res.status(400).json({ error: 'Please add at least one text layer' });
   }
 
-  const inputPath = path.join(UPLOADS_DIR, videoId);
-
-  if (!fs.existsSync(inputPath)) {
-    return res.status(404).json({ error: 'Video not found' });
-  }
-
   try {
-    const probe = ffprobeSync(inputPath);
-    const videoStream = probe.streams.find(s => s.codec_type === 'video');
+    const probe = ffprobeSync(TEMPLATE_PATH);
+    const vs = probe.streams.find(s => s.codec_type === 'video');
 
-    const vidW = parseInt(videoStream.width);
-    const vidH = parseInt(videoStream.height);
+    const vidW = parseInt(vs.width);
+    const vidH = parseInt(vs.height);
 
-    const fd = 0.4;
+    const fd = 0.35;
     const alpha = `if(lt(t,${fd}),t/${fd},if(lt(t,${duration - fd}),1,if(lt(t,${duration}),(${duration}-t)/${fd},0)))`;
 
     const filters = [];
 
     for (const item of texts) {
-      if (!item.text || item.x === undefined || item.y === undefined) continue;
+      if (!item.text) continue;
 
       const absX = Math.round(Number(item.x) * vidW);
       const absY = Math.round(Number(item.y) * vidH);
@@ -284,13 +269,11 @@ app.post('/api/generate', async (req, res) => {
       const fontFile = resolveFontFile(fontKey, fontStyle);
 
       if (!fontFile) {
-        return res.status(500).json({
-          error: `No font files found in ${FONTS_DIR}`,
-        });
+        return res.status(500).json({ error: 'No font file found' });
       }
 
-      const safeText = escapeDrawtext(item.text);
       const safeFont = fontPathForFFmpeg(fontFile);
+      const safeText = escapeDrawtext(item.text);
       const ffColor = '0x' + fontColor.replace('#', '');
 
       filters.push(
@@ -306,36 +289,36 @@ app.post('/api/generate', async (req, res) => {
       );
     }
 
-    if (filters.length === 0) {
+    if (!filters.length) {
       return res.status(400).json({ error: 'No valid text layers found' });
     }
-
-    const drawtextFilter = filters.join(',');
 
     const outputName = `${uuidv4()}.mp4`;
     const outputPath = path.join(OUTPUTS_DIR, outputName);
 
-    console.log('[generate] Text layers:', texts.length);
-    console.log('[generate] Video size:', vidW, vidH);
+    const drawtextFilter = filters.join(',');
 
     const ffmpegArgs = [
       '-i',
-      inputPath,
+      TEMPLATE_PATH,
       '-vf',
       drawtextFilter,
       '-c:v',
       'libx264',
+      '-preset',
+      'ultrafast',
+      '-crf',
+      '24',
       '-c:a',
       'copy',
-      '-preset',
-      'fast',
-      '-crf',
-      '22',
       '-movflags',
       '+faststart',
       '-y',
       outputPath,
     ];
+
+    console.log('[generate] Rendering from fixed template');
+    console.log('[generate] Text layers:', texts.length);
 
     await new Promise((resolve, reject) => {
       const ff = spawn(FFMPEG_PATH, ffmpegArgs);
@@ -349,7 +332,7 @@ app.post('/api/generate', async (req, res) => {
         if (code === 0) {
           resolve();
         } else {
-          console.error('[ffmpeg stderr tail]\n', stderr.slice(-3000));
+          console.error(stderr.slice(-3000));
           reject(new Error(`FFmpeg exited with code ${code}`));
         }
       });
@@ -364,24 +347,9 @@ app.post('/api/generate', async (req, res) => {
       filename: `wedding_invite_${slug || 'guest'}.mp4`,
     });
   } catch (err) {
-    console.error('[generate error]', err);
+    console.error('[generate]', err);
     res.status(500).json({ error: err.message });
   }
-});
-
-app.get('/api/health', (req, res) => {
-  const fontsOnDisk = fs.existsSync(FONTS_DIR)
-    ? fs.readdirSync(FONTS_DIR).filter(f => f.endsWith('.ttf'))
-    : [];
-
-  res.json({
-    ok: true,
-    baseDir: BASE_DIR,
-    fontsDir: FONTS_DIR,
-    fontsOnDisk,
-    ffmpeg: FFMPEG_PATH,
-    ffprobe: FFPROBE_PATH,
-  });
 });
 
 setInterval(() => {
@@ -402,14 +370,9 @@ setInterval(() => {
 
 const PORT = process.env.PORT || 3001;
 
-ensureFonts()
-  .then(() => {
-    app.listen(PORT, () => {
-      console.log(`\n🎬 Wedding Invite API → http://localhost:${PORT}`);
-      console.log(`Health check → http://localhost:${PORT}/api/health\n`);
-    });
-  })
-  .catch(err => {
-    console.error('Startup error:', err);
-    process.exit(1);
+ensureFonts().then(() => {
+  app.listen(PORT, () => {
+    console.log(`\n🎬 Wedding Invite API running on http://localhost:${PORT}`);
+    console.log(`Template must be here: ${TEMPLATE_PATH}\n`);
   });
+});
